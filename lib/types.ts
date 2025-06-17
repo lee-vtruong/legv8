@@ -12,6 +12,9 @@ export interface Instruction {
   operands?: string;
   address?: number;
   label?: string;
+  // shamt
+  shamt?: number; // Số lượng bit dịch
+  sourceLine: number;
 }
 
 // --- Sub-types for State ---
@@ -37,6 +40,7 @@ export interface CPUState {
     value: number;
     type: "read" | "write";
   };
+  pcBeforeUpdate?: number; // Lưu giá trị PC trước khi cập nhật
 }
 
 // Các tín hiệu điều khiển từ Control Unit
@@ -78,7 +82,7 @@ export interface SimulatorState {
   memory: Record<number, number>;
   cpuState: CPUState;
   controlSignals: ControlSignals;
-  
+
   // Trạng thái thực thi
   isRunning: boolean;
   isPaused: boolean;
@@ -100,14 +104,14 @@ export interface SimulatorState {
   activeSignals: string[];
   isFocusMode: boolean;
   isDebugMode: boolean;
-  
+
   // Các tính năng nâng cao
   pipelineState: any[]; // Giữ kiểu any nếu chưa dùng
   breakpoints: number[];
   stepHistory: StepHistoryEntry[];
   currentHistoryIndex: number;
   maxHistorySize: number;
-  
+
   // Trạng thái của các component (nếu có)
   componentStates: Record<string, any>;
   instructionAssembly: string;

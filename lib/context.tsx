@@ -53,6 +53,7 @@ const initialState: SimulatorState = {
     aluResult: undefined,
     lastRegisterAccess: undefined,
     lastMemoryAccess: undefined,
+    pcBeforeUpdate: undefined, // THÊM: Lưu PC trước khi cập nhật
   },
   controlSignals: {
     Reg2Loc: false,
@@ -725,7 +726,7 @@ function getActivePathsForMicroStep(
       }
       console.log(`Active paths for MicroStep 3: ${JSON.stringify(paths)}`)
       break
-      
+
     case 4: // Write Back
       if (controlSignals.RegWrite) {
         // SỬA LỖI MUX 3: Kích hoạt CẢ HAI đường vào memtoreg-mux
@@ -1067,6 +1068,7 @@ export function SimulatorProvider({ children }: SimulatorProviderProps) {
           break
 
         case 5: // Update PC
+          newCpuState.pcBeforeUpdate = newCpuState.pc;
           let shouldBranch = false
           let newPC = newCpuState.pc || 0
 

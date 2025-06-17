@@ -154,8 +154,14 @@ function getParticleValue(
 
   // Các đường ra từ Instruction Memory
   if (cleanPath.startsWith("path-im-")) {
+    // console.log("CBZ opcode:", opcode); // Phải ra 1440
     if (cleanPath === "path-im-control") return `${opcode.toString(2).padStart(11, "0")}`;
-    if (cleanPath === "path-im-readreg1") return `${rs1.toString(2).padStart(5, "0")}`;
+    if (cleanPath === "path-im-readreg1") {
+      // CBZ/CBNZ: ReadReg1 là Rt ([4:0]), các lệnh khác là rs1 ([9:5])
+      return (instruction.type === "CBZ" || instruction.type === "CBNZ")
+        ? `${rd.toString(2).padStart(5, "0")}`
+        : `${rs1.toString(2).padStart(5, "0")}`;
+    }
     if (cleanPath === "path-im-mux-reg2loc-0") return `${rs2.toString(2).padStart(5, "0")}`;
     if (cleanPath === "path-im-mux-reg2loc-1") return `${rd.toString(2).padStart(5, "0")}`;
     // đường từ instruction memory đến with register file
@@ -174,17 +180,12 @@ function getParticleValue(
 
     case 1: // Decode
       // path-mux-reg2loc-readreg2 (đường từ mux đến readreg2) là giá trị của rs2 hoặc rd
-      // if (cleanPath === "path-mux-reg2loc-readreg2") return `X${controlSignals.Reg2Loc ? (rs2 || 0) : (rd || 0)}`; 
       if (cleanPath === "path-mux-reg2loc-readreg2") {
-        // Nếu là lệnh I-type (ADDI, SUBI, ...) thì luôn là XZR (00000)
-        if (["ADDI", "SUBI"].includes(instruction.type)) {
-          return "00000";
-        }
-        // ĐÚNG: Reg2Loc = 1 => chọn rd, Reg2Loc = 0 => chọn rs2
+        // ĐÚNG: Reg2Loc = 1 => chọn input 1 (rd), Reg2Loc = 0 => chọn input 0 (rs2)
         const regValue = controlSignals.Reg2Loc ? rd : rs2;
         return `${(regValue || 0).toString(2).padStart(5, "0")}`;
       }
-      if (cleanPath === "path-im-writereg") return `X${rd}`;
+      if (cleanPath === "path-im-writereg") return `${rd.toString(2).padStart(5, "0")}`; // Hiển thị số hiệu thanh ghi đích
       break;
 
     case 2: // Execute
@@ -199,7 +200,10 @@ function getParticleValue(
     case 3: // Memory
       const address = cpuState.aluResult ?? 0;
       if (cleanPath === "path-alu-memaddr") return `0x${address.toString(16).padStart(4, "0")}`;
-      if (cleanPath === "path-readreg2-memwrite") return `${registers[rd] || 0}`;
+      if (cleanPath === "path-readreg2-memwrite") {
+        // Với STUR, giá trị ghi đến từ thanh ghi Rt, được mã hóa trong trường `rd`
+        return `${registers[rd] || 0}`;
+      }
       if (cleanPath === "path-memread-mux-memtoreg-1") return `${state.memory[address] || 0}`;
       break;
 
@@ -209,17 +213,30 @@ function getParticleValue(
       if (cleanPath === "path-mux-memtoreg-writedata") return `${controlSignals.MemToReg ? (cpuState.lastMemoryAccess?.value ?? 0) : (cpuState.aluResult ?? 0)}`;
       break;
 
-    case 5: // Update PC
-      const pcVal = cpuState.pc || 0;
-      const branchTarget = pcVal + (immediate * 4);
-      if (cleanPath === "path-pc-adder4" || cleanPath === "path-pc-branchadder") return `0x${pcVal.toString(16).padStart(8, "0")}`;
-      if (cleanPath === "path-signext-shift") return `${immediate}`;
-      if (cleanPath === "path-shift-branchadder") return `${immediate * 4}`;
-      if (cleanPath === "path-adder4-mux-pcsrc-0") return `0x${(pcVal + 4).toString(16).padStart(8, "0")}`;
-      if (cleanPath === "path-branchadder-mux-pcsrc-1") return `0x${branchTarget.toString(16).padStart(8, '0')}`;
-      if (cleanPath === "path-mux-pcsrc-pc") return `0x${(controlSignals.PCSrc ? branchTarget : pcVal + 4).toString(16).padStart(8, "0")}`;
-      if (cleanPath === "path-flags-zeroflagin") return cpuState.flags?.Z ? "1" : "0";
+    case 5: { // Update PC
+      // Lấy PC của lệnh hiện tại (trước khi update)
+      const pcBeforeUpdate = cpuState.pcBeforeUpdate ?? 0;
+      const branchOffset = immediate || 0;
+      const branchTarget = pcBeforeUpdate + (branchOffset * 4);
+
+      if (cleanPath === "path-pc-adder4" || cleanPath === "path-pc-branchadder")
+        return `0x${pcBeforeUpdate.toString(16).padStart(8, "0")}`;
+      if (cleanPath === "path-signext-shift")
+        return `${branchOffset}`;
+      if (cleanPath === "path-shift-branchadder")
+        return `${branchOffset * 4}`;
+      if (cleanPath === "path-adder4-mux-pcsrc-0")
+        return `0x${(pcBeforeUpdate + 4).toString(16).padStart(8, "0")}`;
+      if (cleanPath === "path-branchadder-mux-pcsrc-1")
+        return `0x${branchTarget.toString(16).padStart(8, "0")}`;
+      if (cleanPath === "path-mux-pcsrc-pc") {
+        const nextPC = controlSignals.PCSrc ? branchTarget : pcBeforeUpdate + 4;
+        return `0x${nextPC.toString(16).padStart(8, "0")}`;
+      }
+      if (cleanPath === "path-flags-zeroflagin")
+        return cpuState.flags?.Z ? "1" : "0";
       break;
+    }
   }
 
   return "";
@@ -2077,26 +2094,34 @@ export function CpuSimulator() {
         )
       })}
 
-      {/* Enhanced bit field labels for instruction fields */}
-      {currentMicroStep === 1 && (program || [])[currentInstruction] && (
-        <g>
-          <text x="370" y="440" textAnchor="start" className="bit-label">
-            [31:21] Opcode
-          </text>
-          <text x="370" y="500" textAnchor="start" className="bit-label">
-            [9:5] Rs1
-          </text>
-          <text x="370" y="520" textAnchor="start" className="bit-label">
-            [20:16] Rs2
-          </text>
-          <text x="370" y="540" textAnchor="start" className="bit-label">
-            [4:0] Rd
-          </text>
-          <text x="370" y="560" textAnchor="start" className="bit-label">
-            [31:0] Full Instruction
-          </text>
-        </g>
-      )}
+      {/* === BẮT ĐẦU PHẦN THAY THẾ === */}
+
+      {/* Enhanced bit field labels for instruction fields (DYNAMIC & CORRECT) */}
+      {currentMicroStep === 1 && program[currentInstruction] && (() => {
+        const fields = InstructionSplitter.parseInstruction(program[currentInstruction]);
+        const descriptions = InstructionSplitter.getFieldDescriptions(fields);
+
+        // Loại bỏ các trường không cần hiển thị trực tiếp trên datapath
+        delete descriptions["Instruction"];
+        delete descriptions["Format"];
+
+        const startX = 380;
+        const startY = 520;
+        const lineHeight = 18;
+
+        return (
+          <g transform={`translate(${startX}, ${startY})`}>
+            {/* <text x="0" y="-15" textAnchor="start" className="component-title" style={{ fontWeight: 500 }}>Instruction Breakdown</text> */}
+            {Object.entries(descriptions).map(([label, value], index) => (
+              <text key={label} x="0" y={index * lineHeight} textAnchor="start" className="bit-label">
+                <tspan style={{ fontWeight: 'bold' }}>{label}:</tspan> {value}
+              </text>
+            ))}
+          </g>
+        );
+      })()}
+
+      {/* === KẾT THÚC PHẦN THAY THẾ === */}
     </svg>
   )
 

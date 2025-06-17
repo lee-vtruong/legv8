@@ -110,16 +110,16 @@ export function executeInstruction(
       break
 
     case "CBZ":
-      if (instruction.rs1 !== undefined && instruction.immediate !== undefined) {
-        if ((registers[instruction.rs1] || 0) === 0) {
+      if (instruction.rd !== undefined && instruction.immediate !== undefined) {
+        if ((registers[instruction.rd] || 0) === 0) {
           newPC = pc + instruction.immediate
         }
       }
       break
 
     case "CBNZ":
-      if (instruction.rs1 !== undefined && instruction.immediate !== undefined) {
-        if ((registers[instruction.rs1] || 0) !== 0) {
+      if (instruction.rd !== undefined && instruction.immediate !== undefined) {
+        if ((registers[instruction.rd] || 0) !== 0) {
           newPC = pc + instruction.immediate
         }
       }

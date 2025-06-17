@@ -147,18 +147,18 @@ function parseBFormat(operands: string[], sourceLineNumber: number): Instruction
 // Example for parseCBFormat:
 function parseCBFormat(type: InstructionType, operands: string[], sourceLineNumber: number): Instruction {
   if (operands.length !== 2) throw new Error(`${type} instruction requires 2 operands`)
-  const rs1 = parseRegister(operands[0]) // Register to test
+  const rd = parseRegister(operands[0]) // Register to test (Rt)
   const immediateLabelOrOffset = operands[1]
   const offsetValue = parseImmediate(immediateLabelOrOffset)
-  // Store the byte offset (instruction offset * 4)
-  const immediate = offsetValue * 4
+  // Không nhân 4, vì offset là số lệnh
+  const immediate = offsetValue
 
   return {
     type,
-    rs1, // Register being tested
+    rd, // Rt
     immediate,
-    assembly: `${type} X${rs1}, ${immediateLabelOrOffset}`,
-    sourceLine: sourceLineNumber, // Store the original line number
+    assembly: `${type} X${rd}, ${immediateLabelOrOffset}`,
+    sourceLine: sourceLineNumber,
   }
 }
 

@@ -40,11 +40,16 @@ export class DatapathConnections {
   /**
    * Get all data flows for instruction decode phase
    */
+  // === BẮT ĐẦU PHẦN THAY THẾ ===
+
+  /**
+   * Get all data flows for instruction decode phase (FORMAT-AWARE & CORRECT)
+   */
   static getDecodeDataFlows(instruction: Instruction): DataFlow[] {
     const fields = InstructionSplitter.parseInstruction(instruction)
     const flows: DataFlow[] = []
 
-    // Instruction Memory to Splitter (full instruction)
+    // 1. Instruction Memory to Splitter (luôn xảy ra)
     flows.push({
       sourceComponent: ComponentID.INSTRUCTION_MEMORY,
       targetComponent: ComponentID.SPLITTER,
@@ -54,67 +59,45 @@ export class DatapathConnections {
       bitRange: "[31:0]",
     })
 
-    // Splitter to Control Unit (opcode)
-    flows.push({
-      sourceComponent: ComponentID.SPLITTER,
-      targetComponent: ComponentID.CONTROL_UNIT,
-      bus: BusID.Splitter_ControlUnit,
-      data: `0x${fields.opcode.toString(16)} (${instruction.type})`,
-      description: "Splitter sends opcode to Control Unit",
-      bitRange: "[31:21]",
-    })
+    // 2. Splitter to various components based on instruction format
+    switch (fields.format) {
+      case "R":
+        flows.push({ sourceComponent: ComponentID.SPLITTER, targetComponent: ComponentID.CONTROL_UNIT, bus: BusID.Splitter_ControlUnit, data: `0x${fields.opcode.toString(16)}`, description: "Splitter sends Opcode to Control Unit", bitRange: "[31:21]" });
+        flows.push({ sourceComponent: ComponentID.SPLITTER, targetComponent: ComponentID.REGISTERS_FILE, bus: BusID.Splitter_RegFile1, data: `X${fields.rs1}`, description: "Splitter sends Rn (rs1) to Register File (Read Reg 1)", bitRange: "[9:5]" });
+        flows.push({ sourceComponent: ComponentID.SPLITTER, targetComponent: ComponentID.MUX_REGFILESrc, bus: BusID.Splitter_MuxRegFile_0, data: `X${fields.rs2}`, description: "Splitter sends Rm (rs2) to MUX (Input 0)", bitRange: "[20:16]" });
+        flows.push({ sourceComponent: ComponentID.SPLITTER, targetComponent: ComponentID.MUX_REGFILESrc, bus: BusID.Splitter_MuxRegFile_1, data: `X${fields.rd}`, description: "Splitter sends Rd to MUX (Input 1)", bitRange: "[4:0]" });
+        flows.push({ sourceComponent: ComponentID.SPLITTER, targetComponent: ComponentID.ALU_CONTROL, bus: BusID.Splitter_AluControl, data: instruction.type, description: "Splitter sends instruction info to ALU Control", bitRange: "[31:21]" });
+        break;
 
-    // Splitter to Register File (rs1)
-    flows.push({
-      sourceComponent: ComponentID.SPLITTER,
-      targetComponent: ComponentID.REGISTERS_FILE,
-      bus: BusID.Splitter_RegFile1,
-      data: `X${fields.rs1}`,
-      description: "Splitter sends Rs1 field to Register File (Read Register 1)",
-      bitRange: "[9:5]",
-    })
+      case "I":
+        flows.push({ sourceComponent: ComponentID.SPLITTER, targetComponent: ComponentID.CONTROL_UNIT, bus: BusID.Splitter_ControlUnit, data: `0x${fields.opcode.toString(16)}`, description: "Splitter sends Opcode to Control Unit", bitRange: "[31:22]" });
+        flows.push({ sourceComponent: ComponentID.SPLITTER, targetComponent: ComponentID.REGISTERS_FILE, bus: BusID.Splitter_RegFile1, data: `X${fields.rs1}`, description: "Splitter sends Rn (rs1) to Register File (Read Reg 1)", bitRange: "[9:5]" });
+        flows.push({ sourceComponent: ComponentID.SPLITTER, targetComponent: ComponentID.EXTRACTOR, bus: BusID.Splitter_Extractor, data: `Imm: ${fields.immediate}`, description: "Splitter sends Immediate to Extractor", bitRange: "[21:10]" });
+        break;
 
-    // Splitter to MUX inputs (rs2 and rd)
-    flows.push({
-      sourceComponent: ComponentID.SPLITTER,
-      targetComponent: ComponentID.MUX_REGFILESrc,
-      bus: BusID.Splitter_MuxRegFile_0,
-      data: `X${fields.rs2}`,
-      description: "Splitter sends Rs2 field to MUX input 0",
-      bitRange: "[20:16]",
-    })
+      case "D":
+        flows.push({ sourceComponent: ComponentID.SPLITTER, targetComponent: ComponentID.CONTROL_UNIT, bus: BusID.Splitter_ControlUnit, data: `0x${fields.opcode.toString(16)}`, description: "Splitter sends Opcode to Control Unit", bitRange: "[31:21]" });
+        flows.push({ sourceComponent: ComponentID.SPLITTER, targetComponent: ComponentID.REGISTERS_FILE, bus: BusID.Splitter_RegFile1, data: `X${fields.rs1}`, description: "Splitter sends Rn (base) to Register File", bitRange: "[9:5]" });
+        flows.push({ sourceComponent: ComponentID.SPLITTER, targetComponent: ComponentID.MUX_REGFILESrc, bus: BusID.Splitter_MuxRegFile_1, data: `X${fields.rd}`, description: "Splitter sends Rt (data) to MUX (Input 1)", bitRange: "[4:0]" }); // STUR uses Rt as source
+        flows.push({ sourceComponent: ComponentID.SPLITTER, targetComponent: ComponentID.EXTRACTOR, bus: BusID.Splitter_Extractor, data: `Imm: ${fields.immediate}`, description: "Splitter sends Immediate to Extractor", bitRange: "[20:12]" });
+        break;
 
-    flows.push({
-      sourceComponent: ComponentID.SPLITTER,
-      targetComponent: ComponentID.MUX_REGFILESrc,
-      bus: BusID.Splitter_MuxRegFile_1,
-      data: `X${fields.rd}`,
-      description: "Splitter sends Rd field to MUX input 1",
-      bitRange: "[4:0]",
-    })
+      case "B":
+        flows.push({ sourceComponent: ComponentID.SPLITTER, targetComponent: ComponentID.CONTROL_UNIT, bus: BusID.Splitter_ControlUnit, data: `0x${fields.opcode.toString(16)}`, description: "Splitter sends Opcode to Control Unit", bitRange: "[31:26]" });
+        flows.push({ sourceComponent: ComponentID.SPLITTER, targetComponent: ComponentID.EXTRACTOR, bus: BusID.Splitter_Extractor, data: `Offset: ${fields.immediate}`, description: "Splitter sends Branch Offset to Extractor", bitRange: "[25:0]" });
+        break;
 
-    // Splitter to Sign Extend (full instruction for immediate extraction)
-    flows.push({
-      sourceComponent: ComponentID.SPLITTER,
-      targetComponent: ComponentID.EXTRACTOR,
-      bus: BusID.Splitter_Extractor,
-      data: `0x${fields.instruction.toString(16).padStart(8, "0")}`,
-      description: "Splitter sends full instruction to Sign Extend for immediate extraction",
-      bitRange: "[31:0]",
-    })
+      case "CB":
+        flows.push({ sourceComponent: ComponentID.SPLITTER, targetComponent: ComponentID.CONTROL_UNIT, bus: BusID.Splitter_ControlUnit, data: `0x${fields.opcode.toString(16)}`, description: "Splitter sends Opcode to Control Unit", bitRange: "[31:24]" });
+        flows.push({ sourceComponent: ComponentID.SPLITTER, targetComponent: ComponentID.REGISTERS_FILE, bus: BusID.Splitter_RegFile1, data: `X${fields.rd}`, description: "Splitter sends Rt (check) to Register File", bitRange: "[4:0]" });
+        flows.push({ sourceComponent: ComponentID.SPLITTER, targetComponent: ComponentID.EXTRACTOR, bus: BusID.Splitter_Extractor, data: `Offset: ${fields.immediate}`, description: "Splitter sends Branch Offset to Extractor", bitRange: "[23:5]" });
+        break;
+    }
 
-    // Splitter to ALU Control (for function field)
-    flows.push({
-      sourceComponent: ComponentID.SPLITTER,
-      targetComponent: ComponentID.ALU_CONTROL,
-      bus: BusID.Splitter_AluControl,
-      data: `${instruction.type}`,
-      description: "Splitter sends instruction info to ALU Control",
-      bitRange: "[31:21]",
-    })
-
-    return flows
+    return flows;
   }
+
+  // === KẾT THÚC PHẦN THAY THẾ ===
 
   /**
    * Get control signal flows
@@ -199,14 +182,19 @@ export class DatapathConnections {
     const fields = InstructionSplitter.parseInstruction(instruction)
 
     // Register File to ALU (operand 1)
-    if (fields.rs1 !== undefined) {
-      const rs1Value = registers[fields.rs1] || 0
+    if (
+      (instruction.type === "CBZ" || instruction.type === "CBNZ")
+        ? fields.rd !== undefined
+        : fields.rs1 !== undefined
+    ) {
+      const regIdx = (instruction.type === "CBZ" || instruction.type === "CBNZ") ? fields.rd : fields.rs1
+      const regValue = registers[regIdx] || 0
       flows.push({
         sourceComponent: ComponentID.REGISTERS_FILE,
         targetComponent: ComponentID.ALU,
         bus: BusID.RegFile_Alu,
-        data: `0x${rs1Value.toString(16)}`,
-        description: `Register File outputs X${fields.rs1} to ALU operand 1`,
+        data: `0x${regValue.toString(16)}`,
+        description: `Register File outputs X${regIdx} to ALU operand 1`,
         bitRange: "[63:0]",
       })
     }

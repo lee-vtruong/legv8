@@ -1,4 +1,4 @@
-// lib/datapath/instruction-splitter.ts - Instruction Field Splitter
+// lib/datapath/instruction-splitter.ts - Instruction Field Splitter (FINAL-FIXED)
 import type { Instruction, InstructionType } from "../types"
 
 export interface InstructionFields {
@@ -6,10 +6,10 @@ export interface InstructionFields {
   instruction: number
 
   // Common fields
-  opcode: number // [31:21] - 11 bits
-  rd: number // [4:0] - 5 bits
-  rs1: number // [9:5] - 5 bits
-  rs2: number // [20:16] - 5 bits
+  opcode: number // Varies in length and position
+  rd: number // [4:0] - Destination/Target register
+  rs1: number // [9:5] - Source register 1
+  rs2: number // [20:16] - Source register 2
 
   // Format-specific fields
   immediate: number // Various positions depending on format
@@ -24,9 +24,7 @@ export class InstructionSplitter {
    * Parse instruction assembly into binary and extract fields
    */
   static parseInstruction(instruction: Instruction): InstructionFields {
-    // Convert assembly to binary representation (simplified)
     const binaryInstruction = this.assembleToBinary(instruction)
-
     return this.extractFields(binaryInstruction, instruction)
   }
 
@@ -34,183 +32,177 @@ export class InstructionSplitter {
    * Extract bit fields from 32-bit instruction
    */
   static extractFields(instructionBinary: number, instruction: Instruction): InstructionFields {
-    const fields: InstructionFields = {
-      instruction: instructionBinary,
-      opcode: this.extractBits(instructionBinary, 31, 21), // [31:21]
-      rd: this.extractBits(instructionBinary, 4, 0), // [4:0]
-      rs1: this.extractBits(instructionBinary, 9, 5), // [9:5]
-      rs2: this.extractBits(instructionBinary, 20, 16), // [20:16]
-      immediate: 0,
-      shamt: this.extractBits(instructionBinary, 15, 10), // [15:10]
-      format: this.determineFormat(instruction.type),
+    const format = this.determineFormat(instruction.type)
+
+    let opcode = 0, rd = 0, rs1 = 0, rs2 = 0, shamt = 0;
+
+    switch (format) {
+      case "R":
+        opcode = this.extractBits(instructionBinary, 31, 21);
+        rd = this.extractBits(instructionBinary, 4, 0);
+        rs1 = this.extractBits(instructionBinary, 9, 5);
+        rs2 = this.extractBits(instructionBinary, 20, 16);
+        shamt = this.extractBits(instructionBinary, 15, 10);
+        break;
+      case "I":
+        opcode = this.extractBits(instructionBinary, 31, 22);
+        rd = this.extractBits(instructionBinary, 4, 0);
+        rs1 = this.extractBits(instructionBinary, 9, 5);
+        break;
+      case "D":
+        opcode = this.extractBits(instructionBinary, 31, 21);
+        rd = this.extractBits(instructionBinary, 4, 0); // Rt
+        rs1 = this.extractBits(instructionBinary, 9, 5); // Rn
+        break;
+      case "B":
+        opcode = this.extractBits(instructionBinary, 31, 26);
+        break;
+      case "CB":
+        opcode = this.extractBits(instructionBinary, 31, 21); // <-- Sửa lại 11 bit
+        rd = this.extractBits(instructionBinary, 4, 0); // Rt
+        break;
     }
 
-    // Extract immediate based on instruction format
-    fields.immediate = this.extractImmediate(instructionBinary, fields.format, instruction)
+    const fields: InstructionFields = {
+      instruction: instructionBinary,
+      opcode,
+      rd,
+      rs1,
+      rs2,
+      immediate: this.extractImmediate(instructionBinary, format, instruction),
+      shamt,
+      format,
+    };
 
-    return fields
+    return fields;
   }
 
-  /**
-   * Extract bits from position high to low (inclusive)
-   */
   private static extractBits(value: number, high: number, low: number): number {
     const mask = (1 << (high - low + 1)) - 1
     return (value >>> low) & mask
   }
 
-  /**
-   * Extract immediate value based on instruction format
-   */
   private static extractImmediate(instruction: number, format: string, instrObj: Instruction): number {
     switch (format) {
-      case "I": // I-format: [21:10] - 12 bits
+      case "I": // I-format: [21:10]
         return this.signExtend(this.extractBits(instruction, 21, 10), 12)
-
-      case "D": // D-format: [20:12] - 9 bits
+      case "D": // D-format: [20:12]
         return this.signExtend(this.extractBits(instruction, 20, 12), 9)
-
-      case "B": // B-format: [25:0] - 26 bits
+      case "B": // B-format: [25:0]
         return this.signExtend(this.extractBits(instruction, 25, 0), 26)
-
-      case "CB": // CB-format: [23:5] - 19 bits
+      case "CB": // CB-format: [23:5]
         return this.signExtend(this.extractBits(instruction, 23, 5), 19)
-
       default:
         return instrObj.immediate || 0
     }
   }
 
-  /**
-   * Sign extend a value from specified bit width to 32 bits
-   */
   private static signExtend(value: number, bits: number): number {
     const signBit = 1 << (bits - 1)
     if (value & signBit) {
-      // Negative number - extend with 1s
       return value | ~((1 << bits) - 1)
     }
     return value
   }
 
-  /**
-   * Determine instruction format from opcode
-   */
   private static determineFormat(type: InstructionType): "R" | "I" | "D" | "B" | "CB" {
     switch (type) {
-      case "ADD":
-      case "SUB":
-      case "AND":
-      case "ORR":
-        return "R"
-
-      case "ADDI":
-      case "SUBI":
-        return "I"
-
-      case "LDUR":
-      case "STUR":
-        return "D"
-
-      case "B":
-        return "B"
-
-      case "CBZ":
-      case "CBNZ":
-        return "CB"
-
-      default:
-        return "R"
+      case "ADD": case "SUB": case "AND": case "ORR": return "R"
+      case "ADDI": case "SUBI": return "I"
+      case "LDUR": case "STUR": return "D"
+      case "B": return "B"
+      case "CBZ": case "CBNZ": return "CB"
+      default: return "R"
     }
   }
 
   /**
-   * Convert instruction object to binary (simplified encoding)
+   * CORRECTLY convert instruction object to binary based on its format
    */
   private static assembleToBinary(instruction: Instruction): number {
-    let binary = 0
+    let binary = 0;
+    const format = this.determineFormat(instruction.type);
+    const opcode = this.getOpcode(instruction.type);
+    console.log("Instruction type:", instruction.type);
+    const imm = instruction.immediate || 0;
+    const rd = instruction.rd || 0;
+    const rs1 = instruction.rs1 || 0;
+    const rs2 = instruction.rs2 || 0;
+    const shamt = instruction.shamt || 0;
 
-    // Set opcode based on instruction type
-    const opcode = this.getOpcode(instruction.type)
-    binary |= opcode << 21 // [31:21]
-
-    // Set register fields
-    if (instruction.rd !== undefined) {
-      binary |= instruction.rd & 0x1f // [4:0]
+    switch (format) {
+      case "R":
+        binary = (opcode << 21) | (rs2 << 16) | (shamt << 10) | (rs1 << 5) | rd;
+        break;
+      case "I":
+        binary = (opcode << 22) | ((imm & 0xFFF) << 10) | (rs1 << 5) | rd;
+        break;
+      case "D":
+        binary = (opcode << 21) | ((imm & 0x1FF) << 12) | (rs1 << 5) | rd;
+        break;
+      case "B":
+        binary = (opcode << 26) | (imm & 0x3FFFFFF);
+        break;
+      case "CB":
+        binary = (opcode << 21) | ((imm & 0x7FFFF) << 5) | rd;
+        break;
     }
-
-    if (instruction.rs1 !== undefined) {
-      binary |= (instruction.rs1 & 0x1f) << 5 // [9:5]
-    }
-
-    if (instruction.rs2 !== undefined) {
-      binary |= (instruction.rs2 & 0x1f) << 16 // [20:16]
-    }
-
-    // Set immediate field based on format
-    if (instruction.immediate !== undefined) {
-      const format = this.determineFormat(instruction.type)
-      binary |= this.encodeImmediate(instruction.immediate, format)
-    }
-
-    return binary >>> 0 // Ensure unsigned 32-bit
+    return binary >>> 0;
   }
 
-  /**
-   * Get opcode for instruction type (simplified)
-   */
   private static getOpcode(type: InstructionType): number {
-    const opcodes: Record<InstructionType, number> = {
-      ADD: 0x458, // 10001011000
-      SUB: 0x658, // 11001011000
-      AND: 0x450, // 10001010000
-      ORR: 0x550, // 10101010000
-      ADDI: 0x488, // 10010001000
-      SUBI: 0x688, // 11010001000
-      LDUR: 0x7c2, // 11111000010
-      STUR: 0x7c0, // 11111000000
-      B: 0x0a0, // 00010100000
-      CBZ: 0x5a0, // 10110100000
-      CBNZ: 0x5a8, // 10110101000
+    const opcodes: Record<string, number> = {
+      ADD: 0b10001011000, SUB: 0b11001011000, AND: 0b10001010000, ORR: 0b10101010000,
+      ADDI: 0b1001000100, SUBI: 0b1101000100,
+      LDUR: 0b11111000010, STUR: 0b11111000000,
+      B: 0b000101,
+      CBZ: 0b10110100000, // 11 bit
+      CBNZ: 0b10110101000, // 11 bit
     }
-
+    console.log("getOpcode type:", type, "opcode:", opcodes[type]);
     return opcodes[type] || 0
   }
 
   /**
-   * Encode immediate value based on format
-   */
-  private static encodeImmediate(immediate: number, format: string): number {
-    switch (format) {
-      case "I": // [21:10]
-        return (immediate & 0xfff) << 10
-
-      case "D": // [20:12]
-        return (immediate & 0x1ff) << 12
-
-      case "B": // [25:0]
-        return immediate & 0x3ffffff
-
-      case "CB": // [23:5]
-        return (immediate & 0x7ffff) << 5
-
-      default:
-        return 0
-    }
-  }
-
-  /**
-   * Get instruction field descriptions for debugging
+   * Get instruction field descriptions with CORRECT bit ranges for the UI
    */
   static getFieldDescriptions(fields: InstructionFields): Record<string, string> {
-    return {
-      "Instruction [31:0]": `0x${fields.instruction.toString(16).padStart(8, "0")}`,
-      "Opcode [31:21]": `0x${fields.opcode.toString(16)} (${fields.opcode})`,
-      "Rd [4:0]": `X${fields.rd}`,
-      "Rs1 [9:5]": `X${fields.rs1}`,
-      "Rs2 [20:16]": `X${fields.rs2}`,
-      Immediate: `${fields.immediate}`,
-      Format: fields.format,
+    const descriptions: Record<string, string> = {
+      "Instruction": `0x${fields.instruction.toString(16).padStart(8, "0")} (Binary: ${fields.instruction.toString(2).padStart(32, '0')})`,
+      "Format": fields.format,
+    };
+
+    switch (fields.format) {
+      case "R":
+        descriptions["Opcode [31:21]"] = `0x${fields.opcode.toString(16)} (${fields.opcode})`;
+        descriptions["Rm (rs2) [20:16]"] = `X${fields.rs2}`;
+        descriptions["shamt [15:10]"] = `${fields.shamt}`;
+        descriptions["Rn (rs1) [9:5]"] = `X${fields.rs1}`;
+        descriptions["Rd [4:0]"] = `X${fields.rd}`;
+        break;
+      case "I":
+        descriptions["Opcode [31:22]"] = `0x${fields.opcode.toString(16)} (${fields.opcode})`;
+        descriptions["Immediate [21:10]"] = `${fields.immediate}`;
+        descriptions["Rn (rs1) [9:5]"] = `X${fields.rs1}`;
+        descriptions["Rd [4:0]"] = `X${fields.rd}`;
+        break;
+      case "D":
+        descriptions["Opcode [31:21]"] = `0x${fields.opcode.toString(16)} (${fields.opcode})`;
+        descriptions["Immediate [20:12]"] = `${fields.immediate}`;
+        descriptions["Rn (base) [9:5]"] = `X${fields.rs1}`;
+        descriptions["Rt (data) [4:0]"] = `X${fields.rd}`;
+        break;
+      case "B":
+        descriptions["Opcode [31:26]"] = `0x${fields.opcode.toString(16)} (${fields.opcode})`;
+        descriptions["Branch Offset [25:0]"] = `${fields.immediate}`;
+        break;
+      case "CB":
+        descriptions["Opcode [31:24]"] = `0x${fields.opcode.toString(16)} (${fields.opcode})`;
+        descriptions["Branch Offset [23:5]"] = `${fields.immediate}`;
+        descriptions["Rt (check) [4:0]"] = `X${fields.rd}`;
+        break;
     }
+
+    return descriptions;
   }
 }
