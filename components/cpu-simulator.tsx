@@ -155,7 +155,14 @@ function getParticleValue(
   // Các đường ra từ Instruction Memory
   if (cleanPath.startsWith("path-im-")) {
     // console.log("CBZ opcode:", opcode); // Phải ra 1440
-    if (cleanPath === "path-im-control") return `${opcode.toString(2).padStart(11, "0")}`;
+    // path-im-control sẽ luôn là 11 bits đầu của instruction
+    // trả về 11 bits đầu của instruction là return `${fullInstructionHex.toString(2).padStart(11, "0")}`;
+    if (cleanPath === "path-im-control") {
+      // Lấy 11 bit đầu (bit 31:21) của instruction
+      const instr = typeof fullInstructionHex === "number" ? fullInstructionHex : 0;
+      const opcode11 = (instr >>> 21) & 0x7FF; // 0x7FF = 11 bit mask
+      return opcode11.toString(2).padStart(11, "0");
+    }
     if (cleanPath === "path-im-readreg1") {
       // CBZ/CBNZ: ReadReg1 là Rt ([4:0]), các lệnh khác là rs1 ([9:5])
       return (instruction.type === "CBZ" || instruction.type === "CBNZ")
@@ -167,7 +174,13 @@ function getParticleValue(
     // đường từ instruction memory đến with register file
     if (cleanPath === "path-im-writereg") return `${rd.toString(2).padStart(5, "0")}`;
     if (cleanPath === "path-im-signext") return `${fullInstructionHex.toString(2).padStart(32, "0")}`;
-    if (cleanPath === "path-im-aluIn") return `${opcode.toString(2).padStart(11, "0")}`;
+    // if (cleanPath === "path-im-aluIn") return `${opcode.toString(2).padStart(11, "0")}`;
+    if (cleanPath === "path-im-aluIn") {
+      // Lấy 11 bit đầu (bit 31:21) của instruction
+      const instr = typeof fullInstructionHex === "number" ? fullInstructionHex : 0;
+      const opcode11 = (instr >>> 21) & 0x7FF; // 0x7FF = 11 bit mask
+      return opcode11.toString(2).padStart(11, "0");
+    }
     return "--------";
   }
 
@@ -194,7 +207,9 @@ function getParticleValue(
       if (cleanPath === "path-signext-mux-alusrc-1") return `${immediate}`;
       if (cleanPath === "path-mux-alusrc-alu") return `${controlSignals.ALUSrc ? immediate : (registers[rs2] || 0)}`;
       if (cleanPath === "path-alucontrol-aluop") return instruction.type.replace("I", "");
-      if (cleanPath === "path-alu-flags") return `${cpuState.flags?.N ? "N" : ""}${cpuState.flags?.Z ? "Z" : ""}${cpuState.flags?.C ? "C" : ""}${cpuState.flags?.V ? "V" : ""}`;
+      // if (cleanPath === "path-alu-flags") return `${cpuState.flags?.N ? "N" : ""}${cpuState.flags?.Z ? "Z" : ""}${cpuState.flags?.C ? "C" : ""}${cpuState.flags?.V ? "V" : ""}`;
+      // path-alu-flags tôi ký hiệu nhầm, nó là đường từ ALU.zero đi vào and.in (cùng với zerobranch của các lệnh nhánh) với lệnh CBZ thì nếu ALu = 0 thì ALU.zero = 1 còn với lệnh CBNZ thì nếu ALU = 0 thì ALU.zero = 0
+      if (cleanPath === "path-alu-flags") return cpuState.flags?.Z ? "1" : "0";
       break;
 
     case 3: // Memory
@@ -238,6 +253,13 @@ function getParticleValue(
       // if (cleanPath === "path-alu-flags") {
       //   return `${cpuState.flags?.N ? "N" : ""}${cpuState.flags?.Z ? "Z" : ""}${cpuState.flags?.C ? "C" : ""}${cpuState.flags?.V ? "V" : ""}`;
       // }
+      // // Nếu alu.result là 0 thì ALU.zero = 1, nếu không thì ALU.zero = 0
+      // if (cleanPath === "path-alu-flags") return cpuState.flags?.Z ? "1" : "0";
+      // // Nếu là lệnh nhánh thì ALU.zero = 1 nếu điều kiện nhánh thỏa mãn, nếu không thì ALU.zero = 0
+      if (cleanPath === "path-alu-flags") {
+        return `${cpuState.flags?.Z ? "1" : "0"}`;  // Giá trị ALU.zero luôn là Z flag
+      }
+      // if (cleanPath === "path-alu-flags") return `${cpuState.flags?.Z ? "1" : "0"}`;
       break;
     }
   }

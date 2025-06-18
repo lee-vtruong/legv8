@@ -721,9 +721,9 @@ function getActivePathsForMicroStep(
       // Và kích hoạt đường ra của nó
       paths.push("path-mux-alusrc-alu")
 
-      if (["CBZ", "CBNZ"].includes(instruction.type)) {
-        paths.push("path-alu-flags")
-      }
+      // if (["CBZ", "CBNZ"].includes(instruction.type)) {
+      //   paths.push("path-alu-flags")
+      // }
       break
 
     case 3: // Memory
@@ -765,7 +765,7 @@ function getActivePathsForMicroStep(
       }
       if (controlSignals.ZeroBranch) {
         paths.push("path-flags-zeroflagin", "path-and-to-or", "path-alu-flags")
-        paths.push("path-flags-zeroflagin", "path-and-to-or")
+        // paths.push("path-flags-zeroflagin", "path-and-to-or")
       }
       if (controlSignals.PCSrc) {
         paths.push("path-or-to-mux")
