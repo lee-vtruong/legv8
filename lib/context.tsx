@@ -765,6 +765,7 @@ function getActivePathsForMicroStep(
       }
       if (controlSignals.ZeroBranch) {
         paths.push("path-flags-zeroflagin", "path-and-to-or", "path-alu-flags")
+        paths.push("path-flags-zeroflagin", "path-and-to-or")
       }
       if (controlSignals.PCSrc) {
         paths.push("path-or-to-mux")
