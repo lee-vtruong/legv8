@@ -17,7 +17,7 @@ import { TestValidator } from "./test-validator"
 
 // Helper function để lưu byte-level memory - Sửa để lưu đầy đủ các byte
 function writeWordToMemory(memory: Record<number, number>, address: number, value: number): void {
-  console.log(`DEBUG: Writing word ${value} (0x${value.toString(16)}) to address ${address}`)
+  // console.log(`DEBUG: Writing word ${value} (0x${value.toString(16)}) to address ${address}`)
 
   // Lưu 8 bytes theo Little Endian - FIX: Chỉ ghi 4 bytes cho một word 32-bit
   for (let i = 0; i < 4; i++) {
@@ -34,10 +34,10 @@ function writeWordToMemory(memory: Record<number, number>, address: number, valu
     delete memory[address + i]
   }
 
-  console.log(`DEBUG: Bytes written:`)
+  // console.log(`DEBUG: Bytes written:`)
   for (let i = 0; i < 8; i++) {
     const byte = memory[address + i] || 0
-    console.log(`  [${address + i}] = 0x${byte.toString(16).padStart(2, "0")}`)
+    // console.log(`  [${address + i}] = 0x${byte.toString(16).padStart(2, "0")}`)
   }
 }
 
@@ -268,7 +268,7 @@ function simulatorReducer(state: SimulatorState, action: SimulatorAction): Simul
 
     case "UNDO_INSTRUCTION": {
       // Tìm instructionIndex của lệnh trước đó
-      console.log("stepHistory in reducer:", state.stepHistory)
+      // console.log("stepHistory in reducer:", state.stepHistory)
       const prevInstrIndex = state.currentInstruction - 1;
       if (prevInstrIndex < 0) return state;
 
@@ -559,6 +559,7 @@ function simulateALUOperation(
     return regIndex === 31 ? 0 : registers[regIndex] || 0
   }
 
+  const rdVal = getRegVal(instruction.rd)
   const rs1Val = getRegVal(instruction.rs1)
   const rs2Val = getRegVal(instruction.rs2)
   const immVal = instruction.immediate ?? 0
@@ -603,7 +604,15 @@ function simulateALUOperation(
       break
     case "CBZ":
     case "CBNZ":
-      result = rs1Val
+      // CBZ/CBNZ không thực hiện ALU tính toán, chỉ kiểm tra giá trị
+      result = rs1Val // Giữ giá trị để kiểm tra
+      if (instruction.type === "CBZ") {
+        flags.Z = result === 0
+        flags.N = false // Không cần set N cho CBZ
+      } else {
+        flags.Z = result !== 0
+        flags.N = result < 0 // CBNZ cần set N nếu kết quả âm
+      }
       break
     case "B":
       result = 0
@@ -724,7 +733,7 @@ function getActivePathsForMicroStep(
       if (controlSignals.MemWrite) {
         paths.push("path-readreg2-memwrite")
       }
-      console.log(`Active paths for MicroStep 3: ${JSON.stringify(paths)}`)
+      // console.log(`Active paths for MicroStep 3: ${JSON.stringify(paths)}`)
       break
 
     case 4: // Write Back
@@ -755,7 +764,7 @@ function getActivePathsForMicroStep(
         paths.push("path-uncondBranch-or")
       }
       if (controlSignals.ZeroBranch) {
-        paths.push("path-flags-zeroflagin", "path-and-to-or")
+        paths.push("path-flags-zeroflagin", "path-and-to-or", "path-alu-flags")
       }
       if (controlSignals.PCSrc) {
         paths.push("path-or-to-mux")
@@ -1038,7 +1047,7 @@ export function SimulatorProvider({ children }: SimulatorProviderProps) {
           } else if (instruction.type === "STUR") {
             const address = newCpuState.aluResult || 0
             const value = newRegisters[instruction.rd || 31] || 0
-            console.log(`DEBUG: STUR writing value ${value} to address ${address}`)
+            // console.log(`DEBUG: STUR writing value ${value} to address ${address}`)
 
             // Sử dụng helper function để ghi byte-level
             writeWordToMemory(newMemory, address, value)
@@ -1066,42 +1075,64 @@ export function SimulatorProvider({ children }: SimulatorProviderProps) {
             }
           }
           break
+        // DÁN ĐOẠN CODE NÀY ĐỂ THAY THẾ CHO `case 5` CỦA BẠN
 
-        case 5: // Update PC
-          newCpuState.pcBeforeUpdate = newCpuState.pc;
-          let shouldBranch = false
-          let newPC = newCpuState.pc || 0
+        case 5: { // Update PC
+          console.log("--- DEBUG: PC UPDATE (MicroStep 5) ---");
+          console.log(`Instruction: ${instruction.assembly}`);
+
+          const currentPC = newCpuState.pc || 0;
+          const immediateValue = instruction.immediate || 0;
+          let newPC = currentPC; // Mặc định là PC hiện tại
+          let shouldBranch = false;
+
+          console.log(`Initial state: currentPC = ${currentPC}, immediate = ${immediateValue}`);
 
           if (instruction.type === "B") {
-            shouldBranch = true
-            newPC = (newCpuState.pc || 0) + 4 + (instruction.immediate || 0);
+            shouldBranch = true;
+            newPC = currentPC + (immediateValue * 4);
+            console.log(`B instruction: Branch is unconditional. newPC = ${currentPC} + (${immediateValue} * 4) = ${newPC}`);
           } else if (instruction.type === "CBZ") {
-            const rs1Val = newRegisters[instruction.rs1 || 31] || 0
-            shouldBranch = rs1Val === 0
+            const rdVal = newRegisters[instruction.rd || 31] || 0;
+            console.log(`CBZ check: Register X${instruction.rd} has value ${rdVal}`);
+
+            shouldBranch = (rdVal === 0);
+            console.log(`CBZ condition (rdVal === 0) is ${shouldBranch}.`);
+
             if (shouldBranch) {
-              newPC = (newCpuState.pc || 0) + 4 + (instruction.immediate || 0);
+              newPC = currentPC + (immediateValue * 4);
+              console.log(`  -> Branch TAKEN. newPC = ${currentPC} + (${immediateValue} * 4) = ${newPC}`);
             } else {
-              newPC = (newCpuState.pc || 0) + 4
+              newPC = currentPC + 4;
+              console.log(`  -> Branch NOT taken. newPC = ${currentPC} + 4 = ${newPC}`);
             }
-            addLogEntry(`CBZ: X${instruction.rs1} = ${rs1Val}, branch = ${shouldBranch}`, "info", currentInstruction)
           } else if (instruction.type === "CBNZ") {
-            const rs1Val = newRegisters[instruction.rs1 || 31] || 0
-            shouldBranch = rs1Val !== 0
+            const rdVal = newRegisters[instruction.rd || 31] || 0;
+            console.log(`CBNZ check: Register X${instruction.rd} has value ${rdVal}`);
+
+            shouldBranch = (rdVal !== 0);
+            console.log(`CBNZ condition (rdVal !== 0) is ${shouldBranch}.`);
+
             if (shouldBranch) {
-              newPC = (newCpuState.pc || 0) + 4 + (instruction.immediate || 0);
+              newPC = currentPC + (immediateValue * 4);
+              console.log(`  -> Branch TAKEN. newPC = ${currentPC} + (${immediateValue} * 4) = ${newPC}`);
             } else {
-              newPC = (newCpuState.pc || 0) + 4
+              newPC = currentPC + 4;
+              console.log(`  -> Branch NOT taken. newPC = ${currentPC} + 4 = ${newPC}`);
             }
-            addLogEntry(`CBNZ: X${instruction.rs1} = ${rs1Val}, branch = ${shouldBranch}`, "info", currentInstruction)
           } else {
-            shouldBranch = false
-            newPC = (newCpuState.pc || 0) + 4
+            // Lệnh không phải rẽ nhánh
+            newPC = currentPC + 4;
+            console.log(`Non-branch instruction. newPC = ${currentPC} + 4 = ${newPC}`);
           }
 
-          newControlSignals.PCSrc = shouldBranch
-          newCpuState.pc = newPC
-          addLogEntry(`PC updated: PC = 0x${newPC.toString(16)}`, "info", currentInstruction)
-          break
+          newControlSignals.PCSrc = shouldBranch;
+          newCpuState.pc = newPC;
+          addLogEntry(`PC updated: newPC = 0x${newPC.toString(16)}`, "info", currentInstruction);
+          console.log(`Final decision: shouldBranch = ${shouldBranch}, newCpuState.pc set to ${newPC}`);
+          console.log("---------------------------------------");
+          break;
+        }
       }
 
 
@@ -1211,7 +1242,7 @@ export function SimulatorProvider({ children }: SimulatorProviderProps) {
 
       if (stateRef.current.showAnimations) {
         // THÊM: Sử dụng executionSpeed cho animation delay
-        console.log(`MicroStep ${stateRef.current.currentMicroStep}: Waiting for animation, isStepAnimating = ${stateRef.current.isStepAnimating}, activePaths = ${JSON.stringify(stateRef.current.activePaths)}`)
+        // console.log(`MicroStep ${stateRef.current.currentMicroStep}: Waiting for animation, isStepAnimating = ${stateRef.current.isStepAnimating}, activePaths = ${JSON.stringify(stateRef.current.activePaths)}`)
         const baseAnimationDelay = 2500 // Increase base delay more
         const animationDelays = [3300, 1300, 500, 100, 50] // Explicit delays
         const animationDelay = animationDelays[stateRef.current.executionSpeed - 1] || 2000
@@ -1222,7 +1253,7 @@ export function SimulatorProvider({ children }: SimulatorProviderProps) {
 
         await new Promise<void>((resolve) => {
           const checkAnimation = setInterval(() => {
-            console.log(`Checking animation for MicroStep ${stateRef.current.currentMicroStep}: isStepAnimating = ${stateRef.current.isStepAnimating}`)
+            // console.log(`Checking animation for MicroStep ${stateRef.current.currentMicroStep}: isStepAnimating = ${stateRef.current.isStepAnimating}`)
             if (!stateRef.current.isStepAnimating) {
               clearInterval(checkAnimation)
               resolve()

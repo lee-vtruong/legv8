@@ -39,10 +39,10 @@ ORR X9, X1, X2        // X9 = X1 | X2 (bitwise OR)
 ADDI X10, XZR, #0     // X10 = 0 (for CBZ test)
 ADDI X11, XZR, #5     // X11 = 5 (for CBNZ test)
 
-CBZ X10, #1         // Should branch (X10 == 0)
+CBZ X10, #2         // Should branch (X10 == 0)
 ADDI X12, XZR, #999   // Should be skipped
 
-CBNZ X11, #1        // Should branch (X11 != 0)  
+CBNZ X11, #2        // Should branch (X11 != 0)  
 ADDI X14, XZR, #777   // Should be skipped
 ADDI X15, XZR, #123   // Should execute (final instruction)
 `

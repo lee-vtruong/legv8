@@ -123,7 +123,7 @@ export class InstructionSplitter {
     let binary = 0;
     const format = this.determineFormat(instruction.type);
     const opcode = this.getOpcode(instruction.type);
-    console.log("Instruction type:", instruction.type);
+    // console.log("Instruction type:", instruction.type);
     const imm = instruction.immediate || 0;
     const rd = instruction.rd || 0;
     const rs1 = instruction.rs1 || 0;
@@ -159,7 +159,7 @@ export class InstructionSplitter {
       CBZ: 0b10110100000, // 11 bit
       CBNZ: 0b10110101000, // 11 bit
     }
-    console.log("getOpcode type:", type, "opcode:", opcodes[type]);
+    // console.log("getOpcode type:", type, "opcode:", opcodes[type]);
     return opcodes[type] || 0
   }
 

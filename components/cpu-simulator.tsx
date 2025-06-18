@@ -235,6 +235,9 @@ function getParticleValue(
       }
       if (cleanPath === "path-flags-zeroflagin")
         return cpuState.flags?.Z ? "1" : "0";
+      // if (cleanPath === "path-alu-flags") {
+      //   return `${cpuState.flags?.N ? "N" : ""}${cpuState.flags?.Z ? "Z" : ""}${cpuState.flags?.C ? "C" : ""}${cpuState.flags?.V ? "V" : ""}`;
+      // }
       break;
     }
   }
